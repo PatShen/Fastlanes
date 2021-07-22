@@ -1,0 +1,148 @@
+# This file contains the fastlane.tools configuration
+# You can find the documentation at https://docs.fastlane.tools
+#
+# For a list of all available actions, check out
+#
+#     https://docs.fastlane.tools/actions
+#
+# For a list of all available plugins, check out
+#
+#     https://docs.fastlane.tools/plugins/available-plugins
+#
+
+# Uncomment the line if you want fastlane to automatically update itself
+# update_fastlane
+
+default_platform(:ios)
+
+# local
+# import "local ruby file"
+# actions_path 'local actions DIRECTORY'
+
+# remote
+import_from_git(
+  url: "remote git url",
+  path: "remote ruby file path",
+  branch: "branch",
+  cache_path: "cache"
+)
+
+platform :ios do
+
+    SCHEME = "SCHEME"
+    PASSWORD = "tchf"
+    MSGTYPE = "markdown"
+    MSGTITLE = "打包通知"
+    OUTPUTDIR = "./build/"
+
+    @repoName = ""
+    @outputDir = ""
+
+    before_all do |lane|
+      name = lane_context[SharedValues::LANE_NAME]
+      puts "laneName: #{name}"
+      # 获取cocoapods本地索引名
+      output = `pod repo list`
+      array = output.split("\n\n")
+      @repoName = ""
+      for i in 0..array.count
+        str = array[i]
+        if str.match("- URL:  http://example.com/specs.git") then
+          @repoName = str.split("\n")[0]
+          break
+        end
+      end
+    end
+
+    desc "打包前准备"
+    lane :prepare do |variable|
+      tc_ios_package_prepare(repo: @repoName)
+    end
+
+    desc "打包"
+    lane :building do |variable|
+      debug = variable[:debug]
+      if debug == "1"
+        prepare()
+      end
+
+      mtd = variable[:method]
+      tc_ios_package_building(
+        scheme: SCHEME, 
+        output_dir: OUTPUTDIR, 
+        method: mtd,
+        repo: @repoName
+        )
+    end
+
+    desc "上传ipa，并发送消息"
+    lane :upload do |variable|
+      mtd = variable[:method]
+      debug = variable[:debug]
+      if debug == "1"
+        building(
+          debug: debug,
+          method: mtd
+          )
+      end
+
+      # 读取环境
+      buildConfig = "Release(无法接收测试推送)"
+      if mtd == "debug"
+        buildConfig = "Debug（可接收测试推送）"
+      end
+      configPath = File.expand_path('config file path')
+      config = File.read(configPath)
+      env = ""
+      if !( config =~ %r!//(.*)[regextext]! )
+        env = "开发"
+      elsif !( config =~ %r!//(.*)[regextext]! )
+        env = "测试"
+      elsif !( config =~ %r!//(.*)[regextext]! )
+        env = "预发布"
+      elsif !( config =~ %r!//(.*)[regextext]! )
+        env = "线上"
+        if mtd == "debug"
+          buildConfig = "Debug（无法接收线上推送）"
+        else
+          buildConfig = "Release（可接收线上推送）"
+        end
+      end
+
+      tc_ios_package_upload(
+        method: mtd, 
+        env: env, 
+        build_config: buildConfig, 
+        scheme: SCHEME, 
+        output_dir: OUTPUTDIR,
+        )
+      
+    end
+
+    after_all do |lane, variable|
+
+      m = variable[:method]
+      if m == "appstore"
+        # 执行到这里说明上传成功
+        SUCCESSTITLE = "上架通知"
+        dir = @outputDir
+        name = "#{SCHEME}.ipa"
+        info = tc_read_ipa_info(dir: dir, name: name)
+        appName = info[:CFBundleDisplayName]
+        version = info[:CFBundleShortVersionString]
+        build = info[:CFBundleVersion]
+        msg = "## #{SUCCESSTITLE}\n\n--\n\n#{appName}#{version}build#{build} 已在等待审核。"
+
+        tc_post_dingtalk(msg_type: MSGTYPE, title: SUCCESSTITLE, text: msg)
+      end
+
+    end
+
+    error do |lane, exception, options|
+      ERRORTITLE = "异常通知"
+      laneName = lane_context[SharedValues::LANE_NAME]
+      msg = "## #{ERRORTITLE}\n\n--\n\n### 操作名称 \n\n#{laneName}\n\n### 错误信息\n\n#{exception.message}"
+      tc_post_dingtalk(msg_type: MSGTYPE, title: ERRORTITLE, text: msg)
+    end
+
+end
