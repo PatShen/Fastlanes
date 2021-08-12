@@ -34,6 +34,7 @@ platform :ios do
     ensure_git_branch # 确认 master 分支
 
     if git_tag_exists(tag: version)
+      # system("git tag -d #{version}")
       system("git push --delete origin #{version}")
     end
 

@@ -28,6 +28,59 @@ platform :ios do
   #   )
   # end
 
+  desc '打包聚合'
+  lane :tc_ios_package_aggregation do |variable|
+    method_list = tc_load_method(path: './build/msg.txt')
+    if method_list.count == 0
+      # 没有方法，直接结束
+      return
+    end
+
+    # 1. pod install
+    repo = variable[:repo]
+    tc_pod_install(repo: repo)
+
+    scheme = variable[:scheme]
+    dir = variable[:output_dir]
+    env = variable[:env]
+    skip_screenshots = variable[:skip_screenshots]
+    skip_metadata = variable[:skip_metadata]
+
+    method_list.each do |method|
+      output_dir = "#{dir}#{method}/"
+      build_config = "Release(无法接收测试推送)"
+      if method == "debug"
+        build_config = "Debug（可接收测试推送）"
+      end
+      if env == "线上"
+        if method == "debug"
+          build_config = "Debug（无法接收线上推送）"
+        else
+          build_config = "Release（可接收线上推送）"
+        end
+      end
+
+      # 2. build
+      tc_ios_package_building(
+        scheme: scheme, 
+        output_dir: output_dir, 
+        method: method,
+        repo: repo
+        )
+      # 3. upload
+      tc_ios_package_upload(
+        method: method, 
+        env: env, 
+        build_config: build_config, 
+        scheme: scheme, 
+        output_dir: output_dir,
+        skip_screenshots: skip_screenshots,
+        skip_metadata: skip_metadata,
+        )
+    end
+
+  end
+
 
   desc '打包前准备'
   lane :tc_ios_package_prepare do |variable|
@@ -119,6 +172,13 @@ platform :ios do
         team_name: "tospur co,.ltd"
       )
 
+      success_title = "上架通知"
+      appName = info[:CFBundleDisplayName]
+      build = info[:CFBundleVersion]
+      msg = "## #{success_title}\n\n--\n\n#{appName}#{version}build#{build} 已在等待审核。"
+
+      tc_post_dingtalk(msg_type: "markdown", title: success_title, text: msg)
+
     else
       env = variable[:env]
       buildConfig = variable[:build_config]
@@ -148,137 +208,4 @@ platform :ios do
 
   end
 
-
-  desc '打Debug包'
-  lane :tc_ios_package_debug do |options|
-    repoName = options[:repo]
-    scheme = options[:scheme]
-    output = options[:output_dir]
-
-    path = "#{output}/#{scheme}.ipa"
-    tc_clean_build(path: path)
-
-    tc_pod_install(repo: repoName)
-
-    match(
-      git_url: GIT_URL,
-      type: "development",
-      readonly: true
-    )
-
-    gym(
-      # 在构建前先clean
-      clean: true,
-      # 隐藏没有必要的信息
-      silent: true,
-      # 指定打包所使用的输出方式 (可选: app-store, package, ad-hoc, enterprise, development)
-      export_method: "development",
-      # 指定项目的 scheme 名称
-      scheme: scheme,
-      # 指定输出的文件夹地址
-      output_directory: output,
-      # 指定打包方式 (可选: Release, Debug)
-      configuration: "Debug",
-    )
-
-  end
-
-  desc '打adhoc包'
-  lane :tc_ios_package_adhoc do |options|
-    repoName = options[:repo]
-    scheme = options[:scheme]
-    output = options[:output_dir]
-
-    path = "#{output}/#{scheme}.ipa"
-    tc_clean_build(path: path)
-
-    tc_pod_install(repo: repoName)
-
-    match(
-      git_url: GIT_URL,
-      type: "adhoc",
-      readonly: true
-    )
-
-    gym(
-      # 在构建前先clean
-      clean: true,
-      # 隐藏没有必要的信息
-      silent: true,
-      # 指定打包所使用的输出方式 (可选: app-store, package, adhoc, enterprise, development)
-      export_method: "ad-hoc",
-      # 指定项目的 scheme 名称
-      scheme: scheme,
-      # 指定输出的文件夹地址
-      output_directory: output,
-      # 指定打包方式 (可选: Release, Debug)
-      configuration: "Release",
-    )
-  end
-
-  desc '打enterprise包'
-  lane :tc_ios_package_enterprice do |options|
-    repoName = options[:repo]
-    scheme = options[:scheme]
-    output = options[:output_dir]
-    path = "#{output}/#{scheme}.ipa"
-    tc_clean_build(path: path)
-
-    tc_pod_install(repo: repoName)
-
-    match(
-      git_url: GIT_URL,
-      type: "enterprise",
-      readonly: true
-    )
-
-    gym(
-      # 在构建前先clean
-      clean: true,
-      # 隐藏没有必要的信息
-      silent: true,
-      # 指定打包所使用的输出方式 (可选: app-store, package, ad-hoc, enterprise, development)
-      export_method: "enterprise",
-      # 指定项目的 scheme 名称
-      scheme: scheme,
-      # 指定输出的文件夹地址
-      output_directory: output,
-      # 指定打包方式 (可选: Release, Debug)
-      configuration: "Release",
-    )
-  end
-
-  desc '打appstore包'
-  lane :tc_ios_package_appstore do |options|
-    repoName = options[:repo]
-    scheme = options[:scheme]
-    output = options[:output_dir]
-
-    path = "#{output}/#{scheme}.ipa"
-    tc_clean_build(path: path)
-
-    tc_pod_install(repo: repoName)
-
-    match(
-      git_url: GIT_URL,
-      type: "appstore",
-      readonly: true
-    )
-
-    gym(
-      # 在构建前先clean
-      clean: true,
-      # 隐藏没有必要的信息
-      silent: true,
-      # 指定打包所使用的输出方式 (可选: app-store, package, adhoc, enterprise, development)
-      export_method: "app-store",
-      # 指定项目的 scheme 名称
-      scheme: scheme,
-      # 指定输出的文件夹地址
-      output_directory: output,
-      # 指定打包方式 (可选: Release, Debug)
-      configuration: "Release",
-    )
-
-  end
 end
